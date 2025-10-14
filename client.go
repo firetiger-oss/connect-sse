@@ -14,13 +14,12 @@ import (
 	"strings"
 )
 
-// Request represents a nested HTTP request that will be encoded in the body
-// of the outer HTTP POST request sent by the Client.
+// Request represents a nested Connect RPC request that will be encoded in the
+// body of the outer HTTP POST request sent by the Client.
 type Request struct {
-	Method string          `json:"method"`
-	URI    string          `json:"uri"`
-	Header http.Header     `json:"header,omitempty"`
-	Body   json.RawMessage `json:"body,omitempty"`
+	Procedure string          `json:"procedure"`
+	Header    http.Header     `json:"header,omitempty"`
+	Message   json.RawMessage `json:"message,omitempty"`
 }
 
 // Client implements http.RoundTripper and translates Connect RPC requests to
@@ -53,23 +52,17 @@ func (c *Client) RoundTrip(req *http.Request) (*http.Response, error) {
 
 func (c *Client) newRequest(req *http.Request) (*http.Request, error) {
 	nestedReq := &Request{
-		Method: req.Method,
-		URI:    req.URL.RequestURI(),
+		Procedure: req.URL.Path,
 	}
 
 	contentType := req.Header.Get("Content-Type")
-	if contentType != "" {
-		nestedReq.Header = make(http.Header)
-		nestedReq.Header.Set("Content-Type", contentType)
-	}
-
 	if contentType == "application/json" && req.Body != nil && req.Body != http.NoBody {
 		bodyBytes, err := io.ReadAll(req.Body)
 		if err != nil {
 			return nil, fmt.Errorf("read request body: %w", err)
 		}
 		req.Body.Close()
-		nestedReq.Body = json.RawMessage(bodyBytes)
+		nestedReq.Message = json.RawMessage(bodyBytes)
 	}
 
 	nestedReqBody, err := json.Marshal(nestedReq)

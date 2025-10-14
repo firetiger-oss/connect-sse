@@ -27,12 +27,8 @@ func TestServerServeHTTP(t *testing.T) {
 		{
 			name: "basic json request and response",
 			nestedReq: &Request{
-				Method: http.MethodPost,
-				URI:    "/my.service/Method",
-				Header: http.Header{
-					"Content-Type": []string{"application/json"},
-				},
-				Body: json.RawMessage(`{"name":"test"}`),
+				Procedure: "/my.service/Method",
+				Message:   json.RawMessage(`{"name":"test"}`),
 			},
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Method != http.MethodPost {
@@ -63,13 +59,12 @@ func TestServerServeHTTP(t *testing.T) {
 		{
 			name: "request with query parameters",
 			nestedReq: &Request{
-				Method: http.MethodGet,
-				URI:    "/my.service/Method?param1=value1&param2=value2",
-				Header: http.Header{},
+				Procedure: "/my.service/Method?param1=value1&param2=value2",
+				Message:   json.RawMessage(`{}`),
 			},
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodGet {
-					t.Errorf("method: want GET, got %s", r.Method)
+				if r.Method != http.MethodPost {
+					t.Errorf("method: want POST, got %s", r.Method)
 				}
 				if r.URL.Path != "/my.service/Method" {
 					t.Errorf("path: want /my.service/Method, got %s", r.URL.Path)
@@ -91,12 +86,11 @@ func TestServerServeHTTP(t *testing.T) {
 		{
 			name: "header propagation",
 			nestedReq: &Request{
-				Method: http.MethodPost,
-				URI:    "/my.service/Method",
+				Procedure: "/my.service/Method",
 				Header: http.Header{
-					"Content-Type": []string{"application/json"},
-					"X-Custom":     []string{"nested-value"},
+					"X-Custom": []string{"nested-value"},
 				},
+				Message: json.RawMessage(`{}`),
 			},
 			handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if ct := r.Header.Get("Content-Type"); ct != "application/json" {
@@ -165,12 +159,8 @@ func TestServerReconstructRequest(t *testing.T) {
 				},
 			},
 			nestedReq: &Request{
-				Method: http.MethodPost,
-				URI:    "/my.service/Method",
-				Header: http.Header{
-					"Content-Type": []string{"application/json"},
-				},
-				Body: json.RawMessage(`{"field":"value"}`),
+				Procedure: "/my.service/Method",
+				Message:   json.RawMessage(`{"field":"value"}`),
 			},
 			wantMethod: http.MethodPost,
 			wantURI:    "/my.service/Method",
@@ -188,11 +178,10 @@ func TestServerReconstructRequest(t *testing.T) {
 				URL:  &url.URL{Scheme: "https", Host: "gateway.example.com"},
 			},
 			nestedReq: &Request{
-				Method: http.MethodGet,
-				URI:    "/my.service/Method?key=value&foo=bar",
-				Header: http.Header{},
+				Procedure: "/my.service/Method?key=value&foo=bar",
+				Header:    http.Header{},
 			},
-			wantMethod:  http.MethodGet,
+			wantMethod:  http.MethodPost,
 			wantURI:     "/my.service/Method?key=value&foo=bar",
 			wantHeaders: http.Header{},
 		},
@@ -255,6 +244,53 @@ func TestServerInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestServerEmptyMessage(t *testing.T) {
+	server := &Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("handler should not be called")
+		}),
+	}
+
+	nestedReq := &Request{
+		Procedure: "/my.service/Method",
+	}
+
+	nestedReqBody, _ := json.Marshal(nestedReq)
+	req := httptest.NewRequest(http.MethodPost, "/gateway", bytes.NewReader(nestedReqBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status: want %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
+func TestServerInvalidMessageJSON(t *testing.T) {
+	server := &Server{
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Fatal("handler should not be called")
+		}),
+	}
+
+	nestedReq := &Request{
+		Procedure: "/my.service/Method",
+		Message:   json.RawMessage(`{"invalid":`),
+	}
+
+	nestedReqBody, _ := json.Marshal(nestedReq)
+	req := httptest.NewRequest(http.MethodPost, "/gateway", bytes.NewReader(nestedReqBody))
+	req.Header.Set("Content-Type", "application/json")
+
+	rec := httptest.NewRecorder()
+	server.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status: want %d, got %d", http.StatusBadRequest, rec.Code)
+	}
+}
+
 func TestServerProtobufNotSupported(t *testing.T) {
 	server := &Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -263,11 +299,11 @@ func TestServerProtobufNotSupported(t *testing.T) {
 	}
 
 	nestedReq := &Request{
-		Method: http.MethodPost,
-		URI:    "/my.service/Method",
+		Procedure: "/my.service/Method",
 		Header: http.Header{
 			"Content-Type": []string{"application/proto"},
 		},
+		Message: json.RawMessage(`{}`),
 	}
 
 	nestedReqBody, _ := json.Marshal(nestedReq)
@@ -306,11 +342,11 @@ func TestServerClientStreamingNotSupported(t *testing.T) {
 			}
 
 			nestedReq := &Request{
-				Method: http.MethodPost,
-				URI:    "/my.service/Method",
+				Procedure: "/my.service/Method",
 				Header: http.Header{
 					"Content-Type": []string{tt.contentType},
 				},
+				Message: json.RawMessage(`{}`),
 			}
 
 			nestedReqBody, _ := json.Marshal(nestedReq)
@@ -368,9 +404,8 @@ func TestServerSSEStreaming(t *testing.T) {
 			server := &Server{Handler: handler}
 
 			nestedReq := &Request{
-				Method: http.MethodPost,
-				URI:    "/my.service/Method",
-				Header: http.Header{"Content-Type": []string{"application/json"}},
+				Procedure: "/my.service/Method",
+				Message:   json.RawMessage(`{}`),
 			}
 
 			nestedReqBody, _ := json.Marshal(nestedReq)

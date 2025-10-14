@@ -32,16 +32,21 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(nestedReq.Message) == 0 {
+		errWriter.Write(w, r, connect.NewError(connect.CodeInvalidArgument, fmt.Errorf("message is required")))
+		return
+	}
+
 	contentType := nestedReq.Header.Get("Content-Type")
 	mediaType, _, _ := mime.ParseMediaType(contentType)
 
 	if mediaType == "application/proto" {
-		errWriter.Write(w, r, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("protobuf codec not supported")))
+		errWriter.Write(w, r, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("protobuf codec not supported: %s", mediaType)))
 		return
 	}
 
 	if strings.HasPrefix(mediaType, "application/connect+") {
-		errWriter.Write(w, r, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("client streaming not supported")))
+		errWriter.Write(w, r, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("client streaming not supported: %s", mediaType)))
 		return
 	}
 
@@ -51,18 +56,13 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rw := &responseWriter{
-		ResponseWriter: w,
-		outerHeader:    w.Header(),
-	}
-
-	s.Handler.ServeHTTP(rw, innerReq)
+	s.Handler.ServeHTTP(&responseWriter{ResponseWriter: w}, innerReq)
 }
 
 func (s *Server) reconstructRequest(outerReq *http.Request, nestedReq *Request) (*http.Request, error) {
-	reqURL, err := url.Parse(nestedReq.URI)
+	reqURL, err := url.Parse(nestedReq.Procedure)
 	if err != nil {
-		return nil, fmt.Errorf("parse URI: %w", err)
+		return nil, fmt.Errorf("parse procedure: %w", err)
 	}
 
 	if reqURL.Scheme == "" {
@@ -72,16 +72,11 @@ func (s *Server) reconstructRequest(outerReq *http.Request, nestedReq *Request) 
 		reqURL.Host = outerReq.Host
 	}
 
-	var body io.ReadCloser
-	if len(nestedReq.Body) > 0 {
-		body = io.NopCloser(bytes.NewReader(nestedReq.Body))
-	}
-
 	innerReq, err := http.NewRequestWithContext(
 		outerReq.Context(),
-		nestedReq.Method,
+		http.MethodPost,
 		reqURL.String(),
-		body,
+		io.NopCloser(bytes.NewReader(nestedReq.Message)),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create inner request: %w", err)
@@ -91,25 +86,20 @@ func (s *Server) reconstructRequest(outerReq *http.Request, nestedReq *Request) 
 	innerReq.Header.Del("Content-Type")
 	innerReq.Header.Del("Content-Length")
 	maps.Copy(innerReq.Header, nestedReq.Header)
+	innerReq.Header.Set("Content-Type", "application/json")
 
 	return innerReq, nil
 }
 
 type responseWriter struct {
 	http.ResponseWriter
-	outerHeader    http.Header
-	headerWritten  bool
-	statusCode     int
-	capturedHeader http.Header
-	isStreaming    bool
-	buf            bytes.Buffer
+	headerWritten bool
+	isStreaming   bool
+	buffer        bytes.Buffer
 }
 
 func (rw *responseWriter) Header() http.Header {
-	if rw.capturedHeader == nil {
-		rw.capturedHeader = make(http.Header)
-	}
-	return rw.capturedHeader
+	return rw.ResponseWriter.Header()
 }
 
 func (rw *responseWriter) WriteHeader(statusCode int) {
@@ -117,16 +107,14 @@ func (rw *responseWriter) WriteHeader(statusCode int) {
 		return
 	}
 	rw.headerWritten = true
-	rw.statusCode = statusCode
 
-	mediaType, _, _ := mime.ParseMediaType(rw.capturedHeader.Get("Content-Type"))
+	header := rw.ResponseWriter.Header()
+	mediaType, _, _ := mime.ParseMediaType(header.Get("Content-Type"))
 	if strings.HasPrefix(mediaType, "application/connect+") {
 		rw.isStreaming = true
-		rw.outerHeader.Set("Content-Type", "text/event-stream")
-		rw.outerHeader.Set("Cache-Control", "no-cache")
-		rw.outerHeader.Set("Connection", "keep-alive")
-	} else {
-		maps.Copy(rw.outerHeader, rw.capturedHeader)
+		header.Set("Content-Type", "text/event-stream")
+		header.Set("Cache-Control", "no-cache")
+		header.Set("Connection", "keep-alive")
 	}
 
 	rw.ResponseWriter.WriteHeader(statusCode)
@@ -141,21 +129,21 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 		return rw.ResponseWriter.Write(b)
 	}
 
-	rw.buf.Write(b)
+	rw.buffer.Write(b)
 	bytesWritten := len(b)
 
-	for rw.buf.Len() >= 5 {
-		envBuf := rw.buf.Bytes()
+	for rw.buffer.Len() >= 5 {
+		envBuf := rw.buffer.Bytes()
 
 		flags := envBuf[0]
 		length := binary.BigEndian.Uint32(envBuf[1:5])
 
-		if rw.buf.Len() < int(5+length) {
+		if rw.buffer.Len() < int(5+length) {
 			break
 		}
 
-		rw.buf.Next(5)
-		data := rw.buf.Next(int(length))
+		rw.buffer.Next(5)
+		data := rw.buffer.Next(int(length))
 
 		if err := rw.writeSSEEvent(data, flags); err != nil {
 			return bytesWritten, err

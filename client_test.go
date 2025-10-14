@@ -22,10 +22,9 @@ func TestClientRoundTrip(t *testing.T) {
 		incomingBody         string
 		wantServerMethod     string
 		wantServerPath       string
-		wantNestedMethod     string
-		wantNestedURI        string
+		wantNestedProcedure  string
 		wantNestedHeader     http.Header
-		wantNestedBody       string
+		wantNestedMessage    string
 		wantOuterHeader      http.Header
 		serverResponseStatus int
 		serverResponseHeader http.Header
@@ -43,10 +42,8 @@ func TestClientRoundTrip(t *testing.T) {
 			incomingBody:         `{"name":"test"}`,
 			wantServerMethod:     http.MethodPost,
 			wantServerPath:       "/rpc",
-			wantNestedMethod:     http.MethodPost,
-			wantNestedURI:        "/my.service/Method",
-			wantNestedHeader:     http.Header{"Content-Type": []string{"application/json"}},
-			wantNestedBody:       `{"name":"test"}`,
+			wantNestedProcedure:  "/my.service/Method",
+			wantNestedMessage:    `{"name":"test"}`,
 			wantOuterHeader:      http.Header{"User-Agent": []string{"test-client"}},
 			serverResponseStatus: http.StatusOK,
 			serverResponseHeader: http.Header{"Content-Type": []string{"application/json"}},
@@ -75,8 +72,7 @@ func TestClientRoundTrip(t *testing.T) {
 			incomingURL:          "http://service.example.com/my.service/Method",
 			incomingHeader:       http.Header{"Content-Type": []string{"application/connect+proto"}},
 			incomingBody:         "binary-data",
-			wantNestedHeader:     http.Header{"Content-Type": []string{"application/connect+proto"}},
-			wantNestedBody:       "",
+			wantNestedMessage:    "",
 			serverResponseStatus: http.StatusOK,
 			serverResponseHeader: http.Header{"Content-Type": []string{"application/json"}},
 			serverResponseBody:   `{}`,
@@ -95,28 +91,25 @@ func TestClientRoundTrip(t *testing.T) {
 					t.Errorf("server path: want %s, got %s", tt.wantServerPath, r.URL.Path)
 				}
 
-				if tt.wantNestedMethod != "" || tt.wantNestedURI != "" || len(tt.wantNestedHeader) > 0 {
+				if tt.wantNestedProcedure != "" || len(tt.wantNestedHeader) > 0 {
 					var nestedReq Request
 					if err := json.NewDecoder(r.Body).Decode(&nestedReq); err != nil {
 						t.Fatalf("decode nested request: %v", err)
 					}
 
-					if tt.wantNestedMethod != "" && nestedReq.Method != tt.wantNestedMethod {
-						t.Errorf("nested method: want %s, got %s", tt.wantNestedMethod, nestedReq.Method)
-					}
-					if tt.wantNestedURI != "" && nestedReq.URI != tt.wantNestedURI {
-						t.Errorf("nested URI: want %s, got %s", tt.wantNestedURI, nestedReq.URI)
+					if tt.wantNestedProcedure != "" && nestedReq.Procedure != tt.wantNestedProcedure {
+						t.Errorf("nested procedure: want %s, got %s", tt.wantNestedProcedure, nestedReq.Procedure)
 					}
 					for k, want := range tt.wantNestedHeader {
 						if got := nestedReq.Header.Get(k); got != want[0] {
 							t.Errorf("nested header %s: want %s, got %s", k, want[0], got)
 						}
 					}
-					if tt.wantNestedBody != "" && string(nestedReq.Body) != tt.wantNestedBody {
-						t.Errorf("nested body: want %s, got %s", tt.wantNestedBody, string(nestedReq.Body))
+					if tt.wantNestedMessage != "" && string(nestedReq.Message) != tt.wantNestedMessage {
+						t.Errorf("nested message: want %s, got %s", tt.wantNestedMessage, string(nestedReq.Message))
 					}
-					if tt.wantNestedBody == "" && len(nestedReq.Body) != 0 {
-						t.Errorf("nested body: want empty, got %s", string(nestedReq.Body))
+					if tt.wantNestedMessage == "" && len(nestedReq.Message) != 0 {
+						t.Errorf("nested message: want empty, got %s", string(nestedReq.Message))
 					}
 				}
 
@@ -273,12 +266,8 @@ func TestClientNewRequest(t *testing.T) {
 			},
 			reqBody: `{"field":"value"}`,
 			wantNestedReq: &Request{
-				Method: http.MethodPost,
-				URI:    "/my.svc/Method",
-				Header: http.Header{
-					"Content-Type": []string{"application/json"},
-				},
-				Body: json.RawMessage(`{"field":"value"}`),
+				Procedure: "/my.svc/Method",
+				Message:   json.RawMessage(`{"field":"value"}`),
 			},
 			wantOuterURL: "https://gateway/rpc",
 			wantOuterHdrs: http.Header{
@@ -330,17 +319,11 @@ func TestClientNewRequest(t *testing.T) {
 				t.Fatalf("unmarshal nested request: %v", err)
 			}
 
-			if nestedReq.Method != tt.wantNestedReq.Method {
-				t.Errorf("nested method: want %s, got %s", tt.wantNestedReq.Method, nestedReq.Method)
+			if nestedReq.Procedure != tt.wantNestedReq.Procedure {
+				t.Errorf("nested procedure: want %s, got %s", tt.wantNestedReq.Procedure, nestedReq.Procedure)
 			}
-			if nestedReq.URI != tt.wantNestedReq.URI {
-				t.Errorf("nested URI: want %s, got %s", tt.wantNestedReq.URI, nestedReq.URI)
-			}
-			if ct := nestedReq.Header.Get("Content-Type"); ct != tt.wantNestedReq.Header.Get("Content-Type") {
-				t.Errorf("nested Content-Type: want %s, got %s", tt.wantNestedReq.Header.Get("Content-Type"), ct)
-			}
-			if string(nestedReq.Body) != string(tt.wantNestedReq.Body) {
-				t.Errorf("nested body: want %s, got %s", string(tt.wantNestedReq.Body), string(nestedReq.Body))
+			if string(nestedReq.Message) != string(tt.wantNestedReq.Message) {
+				t.Errorf("nested message: want %s, got %s", string(tt.wantNestedReq.Message), string(nestedReq.Message))
 			}
 
 			if outerReq.URL.String() != tt.wantOuterURL {
