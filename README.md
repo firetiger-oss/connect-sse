@@ -116,15 +116,14 @@ import (
 )
 
 func main() {
-    sseURL, _ := url.Parse("http://localhost:8080/sse")
     transport := &connectsse.Client{
-        URL:       sseURL,
-        Transport: http.DefaultTransport,
+        URL: &url.URL{Path: "/sse"},
     }
 
     client := greetv1connect.NewGreetServiceClient(
         &http.Client{Transport: transport},
         "http://localhost:8080",
+        connect.WithCodec(connect.JSONCodec{}), // required
     )
 
     ctx := context.Background()
