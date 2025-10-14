@@ -1,0 +1,23 @@
+version: v2
+
+managed:
+  enabled: true
+  disable:
+    - file_option: go_package
+  override:
+    - file_option: go_package_prefix
+      value: github.com/firetiger-oss/connect-sse/proto/go
+
+inputs:
+  - directory: proto
+
+plugins:
+  - local: [go, tool, protoc-gen-go]
+    out: proto/go
+    opt:
+      - paths=source_relative
+
+  - local: [go, tool, protoc-gen-connect-go]
+    out: proto/go
+    opt:
+      - paths=source_relative

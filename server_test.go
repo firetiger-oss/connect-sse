@@ -318,15 +318,11 @@ func TestServerProtobufNotSupported(t *testing.T) {
 	}
 }
 
-func TestServerClientStreamingNotSupported(t *testing.T) {
+func TestServerProtobufStreamingNotSupported(t *testing.T) {
 	tests := []struct {
 		name        string
 		contentType string
 	}{
-		{
-			name:        "connect+json streaming",
-			contentType: "application/connect+json",
-		},
 		{
 			name:        "connect+proto streaming",
 			contentType: "application/connect+proto",

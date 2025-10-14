@@ -53,16 +53,36 @@ func (c *Client) RoundTrip(req *http.Request) (*http.Response, error) {
 func (c *Client) newRequest(req *http.Request) (*http.Request, error) {
 	nestedReq := &Request{
 		Procedure: req.URL.Path,
+		Header:    make(http.Header),
 	}
 
 	contentType := req.Header.Get("Content-Type")
-	if contentType == "application/json" && req.Body != nil && req.Body != http.NoBody {
+	if contentType != "" {
+		nestedReq.Header.Set("Content-Type", contentType)
+	}
+	mediaType, _, _ := mime.ParseMediaType(contentType)
+
+	if req.Body != nil && req.Body != http.NoBody {
+		defer req.Body.Close()
+
 		bodyBytes, err := io.ReadAll(req.Body)
 		if err != nil {
 			return nil, fmt.Errorf("read request body: %w", err)
 		}
-		req.Body.Close()
-		nestedReq.Message = json.RawMessage(bodyBytes)
+
+		// For Connect enveloped requests, unwrap the envelope to get the JSON payload
+		// but keep the Content-Type as application/connect+json
+		if mediaType == "application/connect+json" && len(bodyBytes) >= 5 {
+			// Skip 5-byte envelope header (1 byte flags + 4 bytes big-endian length)
+			length := binary.BigEndian.Uint32(bodyBytes[1:5])
+			if len(bodyBytes) >= int(5+length) {
+				bodyBytes = bodyBytes[5 : 5+length]
+			}
+		}
+
+		if mediaType == "application/json" || mediaType == "application/connect+json" {
+			nestedReq.Message = json.RawMessage(bodyBytes)
+		}
 	}
 
 	nestedReqBody, err := json.Marshal(nestedReq)
@@ -131,7 +151,7 @@ type sseToEnvelopeReader struct {
 
 func (r *sseToEnvelopeReader) Read(p []byte) (int, error) {
 	for r.data == nil && !r.finished {
-		dataLines, err := r.readSSEEvent()
+		data, flags, err := r.readSSEEvent()
 		if err == io.EOF {
 			r.finished = true
 			break
@@ -140,7 +160,7 @@ func (r *sseToEnvelopeReader) Read(p []byte) (int, error) {
 			return 0, err
 		}
 
-		r.data = r.newEnvelopeReader(dataLines)
+		r.data = r.newEnvelopeReader(data, flags)
 	}
 
 	if r.data == nil {
@@ -159,20 +179,26 @@ func (r *sseToEnvelopeReader) Close() error {
 	return r.closer.Close()
 }
 
-func (r *sseToEnvelopeReader) readSSEEvent() ([]string, error) {
-	var dataLines []string
+func (r *sseToEnvelopeReader) readSSEEvent() (data []string, flags byte, err error) {
+	flags = 0
 
 	for r.scanner.Scan() {
 		line := r.scanner.Text()
 
 		if line == "" {
-			if len(dataLines) > 0 {
-				return dataLines, nil
+			if len(data) > 0 {
+				return data, flags, nil
 			}
 			continue
 		}
 
 		if strings.HasPrefix(line, ":") {
+			// Parse flags from SSE comment
+			if rest := strings.TrimPrefix(line, ":flags "); rest != line {
+				if n, scanErr := fmt.Sscanf(rest, "%d", &flags); scanErr == nil && n == 1 {
+					// Successfully parsed flags
+				}
+			}
 			continue
 		}
 
@@ -184,22 +210,28 @@ func (r *sseToEnvelopeReader) readSSEEvent() ([]string, error) {
 		value = strings.TrimPrefix(value, " ")
 
 		if field == "data" {
-			dataLines = append(dataLines, value)
+			data = append(data, value)
 		}
 	}
 
 	if err := r.scanner.Err(); err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
-	if len(dataLines) > 0 {
-		return dataLines, nil
+	if len(data) > 0 {
+		return data, flags, nil
 	}
 
-	return nil, io.EOF
+	return nil, 0, io.EOF
 }
 
-func (r *sseToEnvelopeReader) newEnvelopeReader(dataLines []string) io.Reader {
+func (r *sseToEnvelopeReader) newEnvelopeReader(dataLines []string, flags byte) io.Reader {
+	// Check if compression flag is set (bit 0)
+	if flags&1 != 0 {
+		// Return an error reader that will fail on first read
+		return &errorReader{err: fmt.Errorf("compression not supported: envelope has compression flag set")}
+	}
+
 	totalLen := 0
 	for i, line := range dataLines {
 		totalLen += len(line)
@@ -209,7 +241,7 @@ func (r *sseToEnvelopeReader) newEnvelopeReader(dataLines []string) io.Reader {
 	}
 
 	header := make([]byte, 5)
-	header[0] = 0
+	header[0] = flags
 	binary.BigEndian.PutUint32(header[1:5], uint32(totalLen))
 
 	readers := make([]io.Reader, 0, 1+len(dataLines)*2)
@@ -223,4 +255,13 @@ func (r *sseToEnvelopeReader) newEnvelopeReader(dataLines []string) io.Reader {
 	}
 
 	return io.MultiReader(readers...)
+}
+
+// errorReader is a reader that always returns an error
+type errorReader struct {
+	err error
+}
+
+func (r *errorReader) Read(p []byte) (int, error) {
+	return 0, r.err
 }

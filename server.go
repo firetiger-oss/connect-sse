@@ -40,13 +40,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	contentType := nestedReq.Header.Get("Content-Type")
 	mediaType, _, _ := mime.ParseMediaType(contentType)
 
-	if mediaType == "application/proto" {
+	if mediaType == "application/proto" || mediaType == "application/connect+proto" {
 		errWriter.Write(w, r, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("protobuf codec not supported: %s", mediaType)))
-		return
-	}
-
-	if strings.HasPrefix(mediaType, "application/connect+") {
-		errWriter.Write(w, r, connect.NewError(connect.CodeUnimplemented, fmt.Errorf("client streaming not supported: %s", mediaType)))
 		return
 	}
 
@@ -72,11 +67,25 @@ func (s *Server) reconstructRequest(outerReq *http.Request, nestedReq *Request) 
 		reqURL.Host = outerReq.Host
 	}
 
+	// For application/connect+json, wrap the JSON message in an envelope
+	var bodyReader io.Reader
+	contentType := nestedReq.Header.Get("Content-Type")
+	mediaType, _, _ := mime.ParseMediaType(contentType)
+	if mediaType == "application/connect+json" {
+		// Envelope header: 1 byte flags (0) + 4 bytes length
+		header := make([]byte, 5)
+		header[0] = 0 // flags
+		binary.BigEndian.PutUint32(header[1:5], uint32(len(nestedReq.Message)))
+		bodyReader = io.MultiReader(bytes.NewReader(header), bytes.NewReader(nestedReq.Message))
+	} else {
+		bodyReader = bytes.NewReader(nestedReq.Message)
+	}
+
 	innerReq, err := http.NewRequestWithContext(
 		outerReq.Context(),
 		http.MethodPost,
 		reqURL.String(),
-		io.NopCloser(bytes.NewReader(nestedReq.Message)),
+		io.NopCloser(bodyReader),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("create inner request: %w", err)
@@ -86,7 +95,11 @@ func (s *Server) reconstructRequest(outerReq *http.Request, nestedReq *Request) 
 	innerReq.Header.Del("Content-Type")
 	innerReq.Header.Del("Content-Length")
 	maps.Copy(innerReq.Header, nestedReq.Header)
-	innerReq.Header.Set("Content-Type", "application/json")
+
+	// Set Content-Type from nested request if present, otherwise default to application/json
+	if innerReq.Header.Get("Content-Type") == "" {
+		innerReq.Header.Set("Content-Type", "application/json")
+	}
 
 	return innerReq, nil
 }
@@ -100,6 +113,12 @@ type responseWriter struct {
 
 func (rw *responseWriter) Header() http.Header {
 	return rw.ResponseWriter.Header()
+}
+
+func (rw *responseWriter) Flush() {
+	if flusher, ok := rw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 func (rw *responseWriter) WriteHeader(statusCode int) {
@@ -154,6 +173,14 @@ func (rw *responseWriter) Write(b []byte) (int, error) {
 }
 
 func (rw *responseWriter) writeSSEEvent(data []byte, flags byte) error {
+	// Write flags as an SSE comment if non-zero (to preserve end-stream markers)
+	if flags != 0 {
+		if _, err := fmt.Fprintf(rw.ResponseWriter, ":flags %d\n", flags); err != nil {
+			return err
+		}
+	}
+
+	// Write data lines
 	for line := range bytes.SplitSeq(data, []byte("\n")) {
 		if _, err := io.WriteString(rw.ResponseWriter, "data: "); err != nil {
 			return err
@@ -166,6 +193,7 @@ func (rw *responseWriter) writeSSEEvent(data []byte, flags byte) error {
 		}
 	}
 
+	// Empty line to end the event
 	if _, err := io.WriteString(rw.ResponseWriter, "\n"); err != nil {
 		return err
 	}

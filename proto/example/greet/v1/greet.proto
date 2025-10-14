@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package example.greet.v1;
+
+option go_package = "github.com/firetiger-oss/connect-sse/proto/go/example/greet/v1;greetv1";
+
+// GreetService provides greeting operations.
+service GreetService {
+  // Greet returns a greeting for the given name.
+  rpc Greet(GreetRequest) returns (GreetResponse) {}
+
+  // GreetStream returns a stream of greetings for the given name.
+  rpc GreetStream(GreetRequest) returns (stream GreetResponse) {}
+}
+
+// GreetRequest is the request message for greeting operations.
+message GreetRequest {
+  // The name to greet.
+  string name = 1;
+}
+
+// GreetResponse is the response message containing a greeting.
+message GreetResponse {
+  // The greeting message.
+  string greeting = 1;
+}
