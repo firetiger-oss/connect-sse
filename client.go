@@ -29,6 +29,11 @@ type Request struct {
 // Connect RPC requests to HTTP+JSON requests with nested request structure,
 // and translates JSON or SSE responses back to the Connect RPC format.
 type Client struct {
+	// URL is the address of the SSE gateway. Any fields set on URL override
+	// the corresponding fields of the outgoing request URL; unset fields fall
+	// back to the values from the request. If nil, the request URL is used
+	// unchanged, which is appropriate when the Connect RPC client and the SSE
+	// gateway share the same base URL.
 	URL *url.URL
 	connect.HTTPClient
 }
