@@ -61,7 +61,7 @@ func Example_unary() {
 	// Create Connect RPC client with SSE transport
 	serverURL, _ := url.Parse(server.URL)
 	client := greetv1connect.NewGreetServiceClient(
-		&connectsse.Client{URL: &url.URL{Path: "/"}},
+		&connectsse.Client{},
 		serverURL.String(),
 		connect.WithProtoJSON(),
 	)
@@ -97,7 +97,7 @@ func Example_streaming() {
 	// Create Connect RPC client with SSE transport
 	serverURL, _ := url.Parse(server.URL)
 	client := greetv1connect.NewGreetServiceClient(
-		&connectsse.Client{URL: &url.URL{Path: "/"}},
+		&connectsse.Client{},
 		serverURL.String(),
 		connect.WithProtoJSON(),
 	)

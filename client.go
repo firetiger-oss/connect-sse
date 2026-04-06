@@ -107,6 +107,9 @@ func (c *Client) newRequest(req *http.Request) (*http.Request, error) {
 }
 
 func (c *Client) newTargetURL(reqURL *url.URL) *url.URL {
+	if c.URL == nil {
+		return reqURL
+	}
 	targetURL := new(url.URL)
 	*targetURL = *c.URL
 
