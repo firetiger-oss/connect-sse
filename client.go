@@ -29,12 +29,12 @@ type Request struct {
 // and translates JSON or SSE responses back to the Connect RPC format.
 type Client struct {
 	URL       *url.URL
-	Transport connect.HTTPClient
+	connect.HTTPClient
 }
 
 // Do implements connect.HTTPClient.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
-	httpClient := c.Transport
+	httpClient := c.HTTPClient
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}

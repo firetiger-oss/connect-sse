@@ -142,7 +142,7 @@ func TestClientDo(t *testing.T) {
 
 			client := &Client{
 				URL:       clientURL,
-				Transport: http.DefaultClient,
+				HTTPClient: http.DefaultClient,
 			}
 
 			reqURL, err := url.Parse(tt.incomingURL)
@@ -383,7 +383,7 @@ func TestClientSSEResponse(t *testing.T) {
 			clientURL, _ := url.Parse(server.URL + "/rpc")
 			client := &Client{
 				URL:       clientURL,
-				Transport: http.DefaultClient,
+				HTTPClient: http.DefaultClient,
 			}
 
 			reqURL, _ := url.Parse("http://service.example.com/my.service/Method")
