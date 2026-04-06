@@ -48,15 +48,10 @@ func TestCompressionRejected(t *testing.T) {
 			})
 			defer server.Close()
 
-			// Create SSE client
+			// Create Connect RPC client with SSE transport
 			serverURL, _ := url.Parse(server.URL)
-			transport := &connectsse.Client{
-				URL: &url.URL{Path: "/"},
-			}
-
-			// Create Connect RPC client
 			client := greetv1connect.NewGreetServiceClient(
-				&http.Client{Transport: transport},
+				&connectsse.Client{URL: &url.URL{Path: "/"}},
 				serverURL.String(),
 				connect.WithProtoJSON(),
 			)
@@ -111,15 +106,10 @@ func TestCompressionDisabled(t *testing.T) {
 	})
 	defer server.Close()
 
-	// Create SSE client
+	// Create Connect RPC client with SSE transport
 	serverURL, _ := url.Parse(server.URL)
-	transport := &connectsse.Client{
-		URL: &url.URL{Path: "/"},
-	}
-
-	// Create Connect RPC client
 	client := greetv1connect.NewGreetServiceClient(
-		&http.Client{Transport: transport},
+		&connectsse.Client{URL: &url.URL{Path: "/"}},
 		serverURL.String(),
 		connect.WithProtoJSON(),
 	)

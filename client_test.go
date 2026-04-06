@@ -12,7 +12,7 @@ import (
 	"testing"
 )
 
-func TestClientRoundTrip(t *testing.T) {
+func TestClientDo(t *testing.T) {
 	tests := []struct {
 		name                 string
 		clientURL            string
@@ -161,9 +161,9 @@ func TestClientRoundTrip(t *testing.T) {
 			}
 			req.Header = tt.incomingHeader
 
-			resp, err := client.RoundTrip(req)
+			resp, err := client.Do(req)
 			if (err != nil) != tt.wantErr {
-				t.Fatalf("RoundTrip() error = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("Do() error = %v, wantErr %v", err, tt.wantErr)
 			}
 			if tt.wantErr {
 				return
@@ -389,9 +389,9 @@ func TestClientSSEResponse(t *testing.T) {
 			reqURL, _ := url.Parse("http://service.example.com/my.service/Method")
 			req, _ := http.NewRequest(http.MethodPost, reqURL.String(), nil)
 
-			resp, err := client.RoundTrip(req)
+			resp, err := client.Do(req)
 			if err != nil {
-				t.Fatalf("RoundTrip() error = %v", err)
+				t.Fatalf("Do() error = %v", err)
 			}
 			defer resp.Body.Close()
 

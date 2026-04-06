@@ -24,7 +24,7 @@ type Request struct {
 	Message   json.RawMessage `json:"message,omitempty"`
 }
 
-// Client implements connect.HTTPClient and http.RoundTripper and translates
+// Client implements connect.HTTPClient and translates
 // Connect RPC requests to HTTP+JSON requests with nested request structure,
 // and translates JSON or SSE responses back to the Connect RPC format.
 type Client struct {
@@ -50,11 +50,6 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	}
 
 	return c.newResponse(resp, req), nil
-}
-
-// RoundTrip implements http.RoundTripper.
-func (c *Client) RoundTrip(req *http.Request) (*http.Response, error) {
-	return c.Do(req)
 }
 
 func (c *Client) newRequest(req *http.Request) (*http.Request, error) {
