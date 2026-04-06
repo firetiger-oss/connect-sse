@@ -9,6 +9,7 @@ import (
 	"io"
 	"maps"
 	"mime"
+	"cmp"
 	"net/http"
 	"net/url"
 	"strings"
@@ -34,10 +35,7 @@ type Client struct {
 
 // Do implements connect.HTTPClient.
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
-	httpClient := c.HTTPClient
-	if httpClient == nil {
-		httpClient = http.DefaultClient
-	}
+	httpClient := cmp.Or[connect.HTTPClient](c.HTTPClient, http.DefaultClient)
 
 	outerReq, err := c.newRequest(req)
 	if err != nil {
