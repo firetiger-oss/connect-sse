@@ -9,9 +9,12 @@ import (
 	"io"
 	"maps"
 	"mime"
+	"cmp"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"connectrpc.com/connect"
 )
 
 // Request represents a nested Connect RPC request that will be encoded in the
@@ -22,27 +25,29 @@ type Request struct {
 	Message   json.RawMessage `json:"message,omitempty"`
 }
 
-// Client implements http.RoundTripper and translates Connect RPC requests to
-// HTTP+JSON requests with nested request structure, and translates JSON or SSE
-// responses back to the Connect RPC format.
+// Client implements connect.HTTPClient and translates
+// Connect RPC requests to HTTP+JSON requests with nested request structure,
+// and translates JSON or SSE responses back to the Connect RPC format.
 type Client struct {
-	URL       *url.URL
-	Transport http.RoundTripper
+	// URL is the address of the SSE gateway. Any fields set on URL override
+	// the corresponding fields of the outgoing request URL; unset fields fall
+	// back to the values from the request. If nil, the request URL is used
+	// unchanged, which is appropriate when the Connect RPC client and the SSE
+	// gateway share the same base URL.
+	URL *url.URL
+	connect.HTTPClient
 }
 
-// RoundTrip implements http.RoundTripper.
-func (c *Client) RoundTrip(req *http.Request) (*http.Response, error) {
-	transport := c.Transport
-	if transport == nil {
-		transport = http.DefaultTransport
-	}
+// Do implements connect.HTTPClient.
+func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	httpClient := cmp.Or[connect.HTTPClient](c.HTTPClient, http.DefaultClient)
 
 	outerReq, err := c.newRequest(req)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
 
-	resp, err := transport.RoundTrip(outerReq)
+	resp, err := httpClient.Do(outerReq)
 	if err != nil {
 		return nil, err
 	}
@@ -107,6 +112,9 @@ func (c *Client) newRequest(req *http.Request) (*http.Request, error) {
 }
 
 func (c *Client) newTargetURL(reqURL *url.URL) *url.URL {
+	if c.URL == nil {
+		return reqURL
+	}
 	targetURL := new(url.URL)
 	*targetURL = *c.URL
 

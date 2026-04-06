@@ -5,7 +5,7 @@
 // the Connect RPC protocol and an HTTP+JSON/SSE transport layer. The translation
 // happens at the net/http layer:
 //
-//   - Client.RoundTrip implements http.RoundTripper and converts Connect RPC requests
+//   - Client.Do implements connect.HTTPClient and converts Connect RPC requests
 //     to nested HTTP+JSON requests, then parses JSON or SSE responses back to the
 //     Connect RPC format.
 //

@@ -58,15 +58,10 @@ func Example_unary() {
 	})
 	defer server.Close()
 
-	// Create SSE client
+	// Create Connect RPC client with SSE transport
 	serverURL, _ := url.Parse(server.URL)
-	transport := &connectsse.Client{
-		URL: &url.URL{Path: "/"},
-	}
-
-	// Create Connect RPC client
 	client := greetv1connect.NewGreetServiceClient(
-		&http.Client{Transport: transport},
+		&connectsse.Client{},
 		serverURL.String(),
 		connect.WithProtoJSON(),
 	)
@@ -99,15 +94,10 @@ func Example_streaming() {
 	})
 	defer server.Close()
 
-	// Create SSE client
+	// Create Connect RPC client with SSE transport
 	serverURL, _ := url.Parse(server.URL)
-	transport := &connectsse.Client{
-		URL: &url.URL{Path: "/"},
-	}
-
-	// Create Connect RPC client using Connect protocol with JSON
 	client := greetv1connect.NewGreetServiceClient(
-		&http.Client{Transport: transport},
+		&connectsse.Client{},
 		serverURL.String(),
 		connect.WithProtoJSON(),
 	)
