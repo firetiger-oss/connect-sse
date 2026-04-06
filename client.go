@@ -28,7 +28,7 @@ type Request struct {
 // Connect RPC requests to HTTP+JSON requests with nested request structure,
 // and translates JSON or SSE responses back to the Connect RPC format.
 type Client struct {
-	URL       *url.URL
+	URL *url.URL
 	connect.HTTPClient
 }
 
