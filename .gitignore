@@ -33,3 +33,6 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+
+# Local Claude Code state (committed skills live under .claude/skills/)
+.claude/settings.local.json
